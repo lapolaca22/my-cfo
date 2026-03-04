@@ -10,7 +10,7 @@ import {
   BookOpen,
   MoreHorizontal,
 } from 'lucide-react'
-import { transactions } from '../data/mockData'
+import { transactions as mockTransactions } from '../data/mockData'
 import clsx from 'clsx'
 
 // ── Status badge config ────────────────────────────────────────────────────
@@ -40,12 +40,16 @@ function SortIcon({ field, sortField, sortDir }) {
     : <ChevronDown className="w-3.5 h-3.5 text-brand-500" />
 }
 
-export default function TransactionsTable({ maxRows }) {
+export default function TransactionsTable({ maxRows, data: propData, loading: propLoading }) {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('All')
   const [sortField, setSortField] = useState('date')
   const [sortDir, setSortDir] = useState('desc')
   const [page, setPage] = useState(0)
+
+  // Accept real data via props, fall back to mock
+  const source = propData ?? mockTransactions
+  const isLoading = propLoading ?? false
 
   const PAGE_SIZE = maxRows || 8
 
@@ -59,7 +63,7 @@ export default function TransactionsTable({ maxRows }) {
     setPage(0)
   }
 
-  const filtered = transactions
+  const filtered = source
     .filter(t => {
       if (typeFilter !== 'All' && t.type !== typeFilter) return false
       if (search) {
@@ -244,7 +248,18 @@ export default function TransactionsTable({ maxRows }) {
               )
             })}
 
-            {pageData.length === 0 && (
+            {isLoading && (
+              <tr>
+                <td colSpan={9} className="px-5 py-10">
+                  <div className="flex flex-col items-center gap-2 text-slate-400">
+                    <div className="w-5 h-5 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
+                    <span className="text-xs">Loading transactions…</span>
+                  </div>
+                </td>
+              </tr>
+            )}
+
+            {!isLoading && pageData.length === 0 && (
               <tr>
                 <td colSpan={9} className="px-5 py-12 text-center text-sm text-slate-400">
                   No transactions match your filters.

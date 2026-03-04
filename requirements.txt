@@ -1,6 +1,9 @@
 # ── Core ──────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0          # load .env into os.environ
 
+# ── Supabase ──────────────────────────────────────────────────────────────
+supabase>=2.4.0               # Python Supabase client (server-side, uses service key)
+
 # ── PDF parsing (for investment statements and supplier invoices) ──────────
 pdfplumber>=0.10.0            # extract text and tables from PDFs
 # Alternative: camelot-py[cv] for table extraction from PDFs

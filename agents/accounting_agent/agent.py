@@ -28,6 +28,7 @@ from typing import Any, Optional
 from models import JournalEntry, JournalLine, JournalEntryType
 from integrations.erp import ERPClient
 from integrations.file_storage import FileStorageClient
+from db.repositories import JournalEntryRepository
 
 logger = logging.getLogger(__name__)
 
@@ -67,15 +68,14 @@ class AccountingAgent:
         self,
         erp_client: ERPClient,
         storage_client: FileStorageClient,
+        journal_repo: JournalEntryRepository,
         base_currency: str = "EUR",
     ) -> None:
         self.erp = erp_client
         self.storage = storage_client
+        self.journal_repo = journal_repo
         self.base_currency = base_currency
-        self._posted_entries: list[JournalEntry] = []
-        logger.info(
-            "AccountingAgent initialised (base_currency=%s)", base_currency
-        )
+        logger.info("AccountingAgent initialised (base_currency=%s)", base_currency)
 
     # ------------------------------------------------------------------ #
     # Scheduled entry points                                              #
@@ -472,21 +472,21 @@ class AccountingAgent:
     # ------------------------------------------------------------------ #
 
     def _post_entry(self, entry: JournalEntry) -> None:
-        """Validate and post a journal entry to the ERP."""
+        """Validate, post to ERP, and persist to Supabase."""
         if not entry.is_balanced:
-            logger.error(
-                "Journal entry %s is not balanced — skipping post", entry.id
-            )
+            logger.error("Journal entry %s is not balanced — skipping post", entry.id)
             return
         erp_id = self.erp.post_journal_entry(entry)
         entry.erp_id = erp_id
         entry.posted = True
-        self._posted_entries.append(entry)
+        # Persist to Supabase
+        self.journal_repo.save(entry)
         logger.info("Journal entry posted: erp_id=%s type=%s", erp_id, entry.entry_type.value)
 
     # ------------------------------------------------------------------ #
     # Observability                                                        #
     # ------------------------------------------------------------------ #
 
-    def get_posted_entries(self) -> list[JournalEntry]:
-        return list(self._posted_entries)
+    def get_posted_entries(self) -> list[dict]:
+        """Return all posted journal entries from Supabase."""
+        return self.journal_repo.get_all()

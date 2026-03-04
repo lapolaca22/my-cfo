@@ -9,12 +9,12 @@ Responsibilities:
   5. Once fully approved, queue the invoice for payment in the ERP.
 
 4-eyes enforcement lives in models.ApprovalRequest — the agent only drives the workflow.
+Persistence is handled by InvoiceRepository and ApprovalRepository (Supabase).
 """
 
 import logging
 from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Optional
 
 from models import Invoice, InvoiceStatus, InvoiceType, ApprovalRequest, ApprovalStatus
@@ -22,12 +22,9 @@ from models.approval import ApprovalDecision
 from integrations.erp import ERPClient
 from integrations.email_client import EmailClient, EmailMessage
 from integrations.file_storage import FileStorageClient
+from db.repositories import InvoiceRepository, ApprovalRepository
 
 logger = logging.getLogger(__name__)
-
-# In-memory stores — replace with a database in production
-_pending_approvals: dict[str, ApprovalRequest] = {}   # approval_id -> ApprovalRequest
-_invoice_registry: dict[str, Invoice] = {}            # invoice.id -> Invoice
 
 
 class APAgent:
@@ -41,8 +38,8 @@ class APAgent:
                └─ ingest_from_folder()
           └─ process_approved_invoices()
 
-    The approval step is asynchronous: human approvers call
-    ``record_approval_decision()`` via a webhook / UI action.
+    Approval decisions are recorded via ``record_approval_decision()``,
+    called by a webhook handler or UI backend.
     """
 
     SUPPORTED_EXTENSIONS = (".pdf", ".xml", ".csv", ".png", ".jpg", ".jpeg")
@@ -54,11 +51,15 @@ class APAgent:
         email_client: EmailClient,
         storage_client: FileStorageClient,
         approver_emails: list[str],
+        invoice_repo: InvoiceRepository,
+        approval_repo: ApprovalRepository,
     ) -> None:
         self.erp = erp_client
         self.email = email_client
         self.storage = storage_client
-        self.approver_emails = approver_emails  # used to notify approvers
+        self.approver_emails = approver_emails
+        self.invoice_repo = invoice_repo
+        self.approval_repo = approval_repo
         logger.info(
             "APAgent initialised with %d configured approvers", len(approver_emails)
         )
@@ -68,17 +69,15 @@ class APAgent:
     # ------------------------------------------------------------------ #
 
     def run(self) -> dict:
-        """
-        Full AP cycle: ingest → extract → draft → route.
-        Returns a summary dict for the orchestrator.
-        """
+        """Full AP cycle: ingest → extract → draft → route → queue."""
         logger.info("=== AP Agent run started ===")
         ingested = self.ingest_invoices()
         queued = self.process_approved_invoices()
+        pending = self.approval_repo.get_pending()
         summary = {
             "invoices_ingested": len(ingested),
             "invoices_queued_for_payment": queued,
-            "pending_approvals": len(_pending_approvals),
+            "pending_approvals": len(pending),
         }
         logger.info("=== AP Agent run finished: %s ===", summary)
         return summary
@@ -101,7 +100,6 @@ class APAgent:
         for msg in messages:
             for attachment in msg.attachments:
                 if not attachment["filename"].lower().endswith(self.SUPPORTED_EXTENSIONS):
-                    logger.debug("Skipping unsupported attachment: %s", attachment["filename"])
                     continue
                 try:
                     invoice = self._process_single_invoice(
@@ -112,27 +110,19 @@ class APAgent:
                     invoices.append(invoice)
                     self.email.mark_as_processed(msg.message_id)
                 except Exception as exc:
-                    logger.error(
-                        "Failed to process email attachment %s: %s",
-                        attachment["filename"],
-                        exc,
-                    )
+                    logger.error("Failed to process email attachment %s: %s", attachment["filename"], exc)
         logger.info("Ingested %d invoice(s) from email", len(invoices))
         return invoices
 
     def ingest_from_folder(self) -> list[Invoice]:
         """Pick up new invoice files from the shared folder."""
-        files = self.storage.list_new_files(
-            self.INVOICE_SUBFOLDER, self.SUPPORTED_EXTENSIONS
-        )
+        files = self.storage.list_new_files(self.INVOICE_SUBFOLDER, self.SUPPORTED_EXTENSIONS)
         invoices: list[Invoice] = []
         for file_path in files:
             try:
                 raw_data = self.storage.read_file(file_path)
                 invoice = self._process_single_invoice(
-                    raw_data=raw_data,
-                    filename=file_path.name,
-                    source="shared_folder",
+                    raw_data=raw_data, filename=file_path.name, source="shared_folder"
                 )
                 invoices.append(invoice)
                 self.storage.mark_as_processed(file_path)
@@ -141,13 +131,14 @@ class APAgent:
         logger.info("Ingested %d invoice(s) from shared folder", len(invoices))
         return invoices
 
-    def _process_single_invoice(
-        self, raw_data: bytes, filename: str, source: str
-    ) -> Invoice:
-        """Extract → draft → route for a single invoice file."""
+    def _process_single_invoice(self, raw_data: bytes, filename: str, source: str) -> Invoice:
+        """Extract → save to DB → draft in ERP → route for approval."""
         invoice = self.extract_invoice_data(raw_data, filename, source)
+        # Persist to Supabase immediately
+        self.invoice_repo.save(invoice)
         erp_id = self.create_draft_entry(invoice)
         invoice.erp_id = erp_id
+        self.invoice_repo.update_erp_id(invoice.id, erp_id)
         self.route_for_approval(invoice)
         return invoice
 
@@ -155,9 +146,7 @@ class APAgent:
     # Step 2 — Extraction                                                  #
     # ------------------------------------------------------------------ #
 
-    def extract_invoice_data(
-        self, raw_data: bytes, filename: str, source: str
-    ) -> Invoice:
+    def extract_invoice_data(self, raw_data: bytes, filename: str, source: str) -> Invoice:
         """
         Parse raw file bytes and return a populated Invoice object.
 
@@ -167,8 +156,6 @@ class APAgent:
           - Structured CSV → pandas
         """
         logger.info("[AP PLACEHOLDER] extract_invoice_data: file=%s source=%s", filename, source)
-
-        # --- Placeholder extracted values ---
         invoice = Invoice(
             invoice_type=InvoiceType.SUPPLIER,
             vendor_or_customer="Placeholder Vendor GmbH",
@@ -176,15 +163,12 @@ class APAgent:
             amount=Decimal("1000.00"),
             currency="EUR",
             invoice_date=datetime.utcnow().date(),
-            due_date=datetime.utcnow().date().replace(day=28),  # placeholder due date
-            line_items=[
-                {"description": "Services rendered", "quantity": 1, "unit_price": 1000.00}
-            ],
+            due_date=datetime.utcnow().date().replace(day=28),
+            line_items=[{"description": "Services rendered", "quantity": 1, "unit_price": 1000.00}],
             source=source,
             raw_file_path=filename,
         )
         logger.info("Extracted invoice: %s", invoice)
-        _invoice_registry[invoice.id] = invoice
         return invoice
 
     # ------------------------------------------------------------------ #
@@ -192,10 +176,11 @@ class APAgent:
     # ------------------------------------------------------------------ #
 
     def create_draft_entry(self, invoice: Invoice) -> str:
-        """Create a draft supplier invoice in the ERP and return its ERP ID."""
+        """Create a draft supplier invoice in the ERP and persist status to DB."""
         erp_id = self.erp.create_supplier_invoice_draft(invoice)
         invoice.status = InvoiceStatus.PENDING_APPROVAL
         self.erp.update_invoice_status(erp_id, InvoiceStatus.PENDING_APPROVAL)
+        self.invoice_repo.update_status(invoice.id, InvoiceStatus.PENDING_APPROVAL)
         logger.info("Draft created in ERP: erp_id=%s invoice=%s", erp_id, invoice.id)
         return erp_id
 
@@ -204,30 +189,22 @@ class APAgent:
     # ------------------------------------------------------------------ #
 
     def route_for_approval(self, invoice: Invoice) -> ApprovalRequest:
-        """
-        Create an ApprovalRequest for the invoice and notify configured approvers.
-        The request requires REQUIRED_APPROVALS (2) distinct approvers.
-        """
+        """Create an ApprovalRequest in Supabase and notify configured approvers."""
         request = ApprovalRequest(
             subject_id=invoice.id,
             subject_type="supplier_invoice",
             requested_by="ap_agent",
             amount_hint=f"{invoice.currency} {invoice.amount}",
         )
-        _pending_approvals[request.id] = request
+        self.approval_repo.save(request)
         logger.info(
             "Approval request created: request_id=%s invoice=%s amount=%s",
-            request.id,
-            invoice.id,
-            request.amount_hint,
+            request.id, invoice.id, request.amount_hint,
         )
         self._notify_approvers(request, invoice)
         return request
 
-    def _notify_approvers(
-        self, request: ApprovalRequest, invoice: Invoice
-    ) -> None:
-        """Send approval request notification to all configured approvers."""
+    def _notify_approvers(self, request: ApprovalRequest, invoice: Invoice) -> None:
         subject = (
             f"[Action Required] Approve supplier invoice {invoice.invoice_number} "
             f"— {invoice.currency} {invoice.amount}"
@@ -253,11 +230,13 @@ class APAgent:
         comment: Optional[str] = None,
     ) -> ApprovalRequest:
         """
-        Record a human approver's decision.
-        Called by a webhook handler or UI backend.
-        Raises KeyError if the approval_id is not found.
+        Record a human approver's decision (called by webhook / UI backend).
+        Loads the ApprovalRequest from Supabase, applies the decision, saves back.
         """
-        request = _pending_approvals[approval_id]
+        request = self.approval_repo.get_by_id(approval_id)
+        if request is None:
+            raise KeyError(f"ApprovalRequest {approval_id} not found")
+
         decision = ApprovalDecision(
             approver_id=approver_id,
             approver_name=approver_name,
@@ -265,14 +244,14 @@ class APAgent:
             comment=comment,
         )
         request.add_decision(decision)
+        # Persist the updated decisions + status
+        self.approval_repo.save(request)
+
         logger.info(
-            "Decision recorded: approval=%s approver=%s decision=%s approvals=%d/%d",
-            approval_id,
-            approver_id,
-            decision.decision.value,
-            request.approvals_received,
-            2,
+            "Decision recorded: approval=%s approver=%s decision=%s approvals=%d/2",
+            approval_id, approver_id, decision.decision.value, request.approvals_received,
         )
+
         if request.status == ApprovalStatus.REJECTED:
             self._handle_rejection(request)
         elif request.is_fully_approved:
@@ -280,58 +259,52 @@ class APAgent:
         return request
 
     def _handle_full_approval(self, request: ApprovalRequest) -> None:
-        """Called when both approvers have approved — queue for payment."""
-        invoice = _invoice_registry.get(request.subject_id)
-        if invoice is None:
-            logger.error("Invoice %s not found in registry", request.subject_id)
+        """Both approvers approved — mark invoice APPROVED in DB and ERP."""
+        invoice_row = self.invoice_repo.get_by_id(request.subject_id)
+        if invoice_row is None:
+            logger.error("Invoice %s not found in DB", request.subject_id)
             return
-        invoice.status = InvoiceStatus.APPROVED
-        self.erp.update_invoice_status(invoice.erp_id, InvoiceStatus.APPROVED)
-        logger.info("Invoice %s fully approved (4-eyes satisfied)", invoice.id)
-        del _pending_approvals[request.id]
+        self.invoice_repo.update_status(request.subject_id, InvoiceStatus.APPROVED)
+        if invoice_row.get("erp_id"):
+            self.erp.update_invoice_status(invoice_row["erp_id"], InvoiceStatus.APPROVED)
+        self.approval_repo.delete(request.id)
+        logger.info("Invoice %s fully approved (4-eyes satisfied)", request.subject_id)
 
     def _handle_rejection(self, request: ApprovalRequest) -> None:
-        """Called when any approver rejects the invoice."""
-        invoice = _invoice_registry.get(request.subject_id)
-        if invoice is None:
+        """Any approver rejected — mark invoice REJECTED in DB and ERP."""
+        invoice_row = self.invoice_repo.get_by_id(request.subject_id)
+        if invoice_row is None:
             return
-        invoice.status = InvoiceStatus.REJECTED
-        self.erp.update_invoice_status(invoice.erp_id, InvoiceStatus.REJECTED)
-        logger.warning("Invoice %s rejected by approver", invoice.id)
-        del _pending_approvals[request.id]
+        self.invoice_repo.update_status(request.subject_id, InvoiceStatus.REJECTED)
+        if invoice_row.get("erp_id"):
+            self.erp.update_invoice_status(invoice_row["erp_id"], InvoiceStatus.REJECTED)
+        self.approval_repo.delete(request.id)
+        logger.warning("Invoice %s rejected by approver", request.subject_id)
 
     # ------------------------------------------------------------------ #
     # Step 5 — Payment queuing                                            #
     # ------------------------------------------------------------------ #
 
     def process_approved_invoices(self) -> int:
-        """
-        Scan the invoice registry for fully approved invoices and queue
-        each one for payment in the ERP.
-        Returns the count of invoices queued.
-        """
+        """Queue all DB-approved invoices for payment in the ERP."""
+        approved_rows = self.invoice_repo.get_by_status(["approved"])
         queued = 0
-        for invoice in list(_invoice_registry.values()):
-            if invoice.status == InvoiceStatus.APPROVED and invoice.erp_id:
-                self.queue_for_payment(invoice)
-                queued += 1
+        for row in approved_rows:
+            if not row.get("erp_id"):
+                continue
+            self.erp.queue_payment(row["erp_id"], row["due_date"])
+            self.invoice_repo.update_status(row["id"], InvoiceStatus.QUEUED_FOR_PAYMENT)
+            self.erp.update_invoice_status(row["erp_id"], InvoiceStatus.QUEUED_FOR_PAYMENT)
+            logger.info("Invoice queued for payment: erp_id=%s due=%s", row["erp_id"], row["due_date"])
+            queued += 1
         return queued
-
-    def queue_for_payment(self, invoice: Invoice) -> None:
-        """Push an approved invoice to the ERP payment run queue."""
-        self.erp.queue_payment(invoice.erp_id, str(invoice.due_date))
-        invoice.status = InvoiceStatus.QUEUED_FOR_PAYMENT
-        self.erp.update_invoice_status(invoice.erp_id, InvoiceStatus.QUEUED_FOR_PAYMENT)
-        logger.info(
-            "Invoice queued for payment: erp_id=%s due=%s", invoice.erp_id, invoice.due_date
-        )
 
     # ------------------------------------------------------------------ #
     # Observability helpers                                               #
     # ------------------------------------------------------------------ #
 
     def get_pending_approvals(self) -> list[ApprovalRequest]:
-        return list(_pending_approvals.values())
+        return self.approval_repo.get_pending()
 
-    def get_invoice_registry(self) -> dict[str, Invoice]:
-        return dict(_invoice_registry)
+    def get_invoice_registry(self) -> list[dict]:
+        return self.invoice_repo.get_all()

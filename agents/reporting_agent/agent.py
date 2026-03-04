@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, List, Optional
 from integrations.erp import ERPClient
 from integrations.email_client import EmailClient
 from integrations.file_storage import FileStorageClient
+from db.repositories import CFOReportRepository
 
 if TYPE_CHECKING:
     from agents.ap_agent.agent import APAgent
@@ -114,6 +115,7 @@ class ReportingAgent:
         erp_client: ERPClient,
         email_client: EmailClient,
         storage_client: FileStorageClient,
+        report_repo: CFOReportRepository,
         ap_agent: Optional["APAgent"] = None,
         ar_agent: Optional["ARAgent"] = None,
         accounting_agent: Optional["AccountingAgent"] = None,
@@ -121,6 +123,7 @@ class ReportingAgent:
         self.erp = erp_client
         self.email = email_client
         self.storage = storage_client
+        self.report_repo = report_repo
         self.ap_agent = ap_agent
         self.ar_agent = ar_agent
         self.accounting_agent = accounting_agent
@@ -143,6 +146,8 @@ class ReportingAgent:
         logger.info("=== Reporting Agent run started (period=%s) ===", period)
 
         report = self.generate_cfo_report(period)
+        # Persist to Supabase so the React dashboard can read it
+        self.save_report(report)
         self.export_report(report, formats=["json", "text"])
 
         if recipients:
@@ -401,6 +406,14 @@ class ReportingAgent:
 
         lines.append("=" * 60)
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------ #
+    # Supabase persistence                                               #
+    # ------------------------------------------------------------------ #
+
+    def save_report(self, report: CFOReport) -> str:
+        """Persist the CFO report to Supabase. Returns the new row ID."""
+        return self.report_repo.save(asdict(report))
 
     # ------------------------------------------------------------------ #
     # Delivery                                                            #
