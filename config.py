@@ -25,31 +25,34 @@ def _optional(key: str, default: str = "") -> str:
 
 
 @dataclass
-class ERPConfig:
-    base_url: str = field(default_factory=lambda: _require("ERP_BASE_URL"))
-    api_key: str = field(default_factory=lambda: _require("ERP_API_KEY"))
-    company_id: str = field(default_factory=lambda: _require("ERP_COMPANY_ID"))
+class BusinessCentralConfig:
+    """Microsoft Dynamics 365 Business Central — OAuth2 client-credentials."""
+    tenant_id:     str = field(default_factory=lambda: _require("BC_TENANT_ID"))
+    client_id:     str = field(default_factory=lambda: _require("BC_CLIENT_ID"))
+    client_secret: str = field(default_factory=lambda: _require("BC_CLIENT_SECRET"))
+    company_id:    str = field(default_factory=lambda: _require("BC_COMPANY_ID"))
+    environment:   str = field(default_factory=lambda: _optional("BC_ENVIRONMENT", "sandbox"))
 
 
 @dataclass
 class BankConfig:
-    base_url: str = field(default_factory=lambda: _require("BANK_BASE_URL"))
-    client_id: str = field(default_factory=lambda: _require("BANK_CLIENT_ID"))
+    base_url:      str = field(default_factory=lambda: _require("BANK_BASE_URL"))
+    client_id:     str = field(default_factory=lambda: _require("BANK_CLIENT_ID"))
     client_secret: str = field(default_factory=lambda: _require("BANK_CLIENT_SECRET"))
-    account_id: str = field(default_factory=lambda: _require("BANK_ACCOUNT_ID"))
+    account_id:    str = field(default_factory=lambda: _require("BANK_ACCOUNT_ID"))
 
 
 @dataclass
 class CRMConfig:
     base_url: str = field(default_factory=lambda: _require("CRM_BASE_URL"))
-    api_key: str = field(default_factory=lambda: _require("CRM_API_KEY"))
+    api_key:  str = field(default_factory=lambda: _require("CRM_API_KEY"))
 
 
 @dataclass
 class EmailConfig:
-    host: str = field(default_factory=lambda: _require("EMAIL_HOST"))
-    username: str = field(default_factory=lambda: _require("EMAIL_USERNAME"))
-    password: str = field(default_factory=lambda: _require("EMAIL_PASSWORD"))
+    host:          str = field(default_factory=lambda: _require("EMAIL_HOST"))
+    username:      str = field(default_factory=lambda: _require("EMAIL_USERNAME"))
+    password:      str = field(default_factory=lambda: _require("EMAIL_PASSWORD"))
     invoice_inbox: str = field(
         default_factory=lambda: _optional("EMAIL_INVOICE_INBOX", "Invoices")
     )
@@ -91,12 +94,12 @@ class AgentConfig:
 
 @dataclass
 class AppConfig:
-    erp: ERPConfig = field(default_factory=ERPConfig)
-    bank: BankConfig = field(default_factory=BankConfig)
-    crm: CRMConfig = field(default_factory=CRMConfig)
-    email: EmailConfig = field(default_factory=EmailConfig)
-    storage: StorageConfig = field(default_factory=StorageConfig)
-    agents: AgentConfig = field(default_factory=AgentConfig)
+    bc:      BusinessCentralConfig = field(default_factory=BusinessCentralConfig)
+    bank:    BankConfig            = field(default_factory=BankConfig)
+    crm:     CRMConfig             = field(default_factory=CRMConfig)
+    email:   EmailConfig           = field(default_factory=EmailConfig)
+    storage: StorageConfig         = field(default_factory=StorageConfig)
+    agents:  AgentConfig           = field(default_factory=AgentConfig)
 
 
 def load_config() -> AppConfig:

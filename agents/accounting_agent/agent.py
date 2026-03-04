@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from models import JournalEntry, JournalLine, JournalEntryType
-from integrations.erp import ERPClient
+from integrations.business_central import BusinessCentralClient
 from integrations.file_storage import FileStorageClient
 from db.repositories import JournalEntryRepository
 
@@ -66,7 +66,7 @@ class AccountingAgent:
 
     def __init__(
         self,
-        erp_client: ERPClient,
+        erp_client: BusinessCentralClient,
         storage_client: FileStorageClient,
         journal_repo: JournalEntryRepository,
         base_currency: str = "EUR",

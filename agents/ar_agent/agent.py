@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Optional
 
 from models import Invoice, InvoiceStatus, InvoiceType, Payment, PaymentStatus
-from integrations.erp import ERPClient
+from integrations.business_central import BusinessCentralClient
 from integrations.bank import BankClient
 from integrations.crm import CRMClient
 from db.repositories import InvoiceRepository, PaymentRepository
@@ -40,7 +40,7 @@ class ARAgent:
 
     def __init__(
         self,
-        erp_client: ERPClient,
+        erp_client: BusinessCentralClient,
         bank_client: BankClient,
         crm_client: CRMClient,
         bank_account_id: str,

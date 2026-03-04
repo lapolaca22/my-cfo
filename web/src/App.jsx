@@ -1,6 +1,9 @@
 import { Routes, Route } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Overview from './pages/Overview'
+import AccountsPayable from './pages/AccountsPayable'
+import AccountsReceivable from './pages/AccountsReceivable'
+import AccountingClose from './pages/AccountingClose'
 import Reports from './pages/Reports'
 import Placeholder from './pages/Placeholder'
 
@@ -11,33 +14,9 @@ export default function App() {
       <div className="flex flex-col flex-1 min-w-0">
         <Routes>
           <Route path="/" element={<Overview />} />
-          <Route
-            path="/ap"
-            element={
-              <Placeholder
-                title="Accounts Payable"
-                subtitle="AP Agent · Invoices, approvals, payment queue"
-              />
-            }
-          />
-          <Route
-            path="/ar"
-            element={
-              <Placeholder
-                title="Accounts Receivable"
-                subtitle="AR Agent · CRM sync, bank reconciliation"
-              />
-            }
-          />
-          <Route
-            path="/accounting"
-            element={
-              <Placeholder
-                title="Accounting & Close"
-                subtitle="Accounting Agent · Journal entries, depreciation, payroll"
-              />
-            }
-          />
+          <Route path="/ap"         element={<AccountsPayable />} />
+          <Route path="/ar"         element={<AccountsReceivable />} />
+          <Route path="/accounting" element={<AccountingClose />} />
           <Route path="/reports" element={<Reports />} />
           <Route
             path="/settings"

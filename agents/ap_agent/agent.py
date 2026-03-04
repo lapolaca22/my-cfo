@@ -19,7 +19,7 @@ from typing import Optional
 
 from models import Invoice, InvoiceStatus, InvoiceType, ApprovalRequest, ApprovalStatus
 from models.approval import ApprovalDecision
-from integrations.erp import ERPClient
+from integrations.business_central import BusinessCentralClient
 from integrations.email_client import EmailClient, EmailMessage
 from integrations.file_storage import FileStorageClient
 from db.repositories import InvoiceRepository, ApprovalRepository
@@ -47,7 +47,7 @@ class APAgent:
 
     def __init__(
         self,
-        erp_client: ERPClient,
+        erp_client: BusinessCentralClient,
         email_client: EmailClient,
         storage_client: FileStorageClient,
         approver_emails: list[str],

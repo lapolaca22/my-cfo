@@ -254,3 +254,68 @@ export const alerts = [
   { id: 2, level: 'warning', message: '1 unmatched bank payment requires review', agent: 'AR Agent' },
   { id: 3, level: 'info',    message: 'Monthly close report ready for download', agent: 'Reporting Agent' },
 ]
+
+// ── AP invoices (supplier) ─────────────────────────────────────────────────
+export const apInvoices = [
+  { id: 'INV-2026-0312', vendor: 'Acme Cloud Services GmbH',  amount: 18400,  currency: 'EUR', date: '2026-03-01', due: '2026-03-10', status: 'pending_approval', approvedBy: ['J. Müller'] },
+  { id: 'INV-2026-0309', vendor: 'Precision Parts AG',         amount: 42100,  currency: 'EUR', date: '2026-02-28', due: '2026-03-08', status: 'pending_approval', approvedBy: [] },
+  { id: 'INV-2026-0298', vendor: 'Apex Legal Advisors',        amount: 9500,   currency: 'EUR', date: '2026-02-25', due: '2026-02-28', status: 'paid',             approvedBy: ['J. Müller', 'T. Weber'] },
+  { id: 'INV-2026-0281', vendor: 'Datastream Analytics BV',   amount: 28800,  currency: 'EUR', date: '2026-02-15', due: '2026-02-26', status: 'overdue',          approvedBy: ['M. Schmidt'] },
+  { id: 'INV-2026-0277', vendor: 'TechStack Solutions Ltd',    amount: 15600,  currency: 'EUR', date: '2026-02-10', due: '2026-03-15', status: 'approved',         approvedBy: ['M. Schmidt', 'T. Weber'] },
+  { id: 'INV-2026-0265', vendor: 'Nordic Freight GmbH',        amount: 6200,   currency: 'EUR', date: '2026-02-05', due: '2026-03-20', status: 'queued',           approvedBy: ['J. Müller', 'T. Weber'] },
+  { id: 'INV-2026-0251', vendor: 'Office Supplies Co.',        amount: 1840,   currency: 'EUR', date: '2026-02-01', due: '2026-02-28', status: 'paid',             approvedBy: ['M. Schmidt', 'J. Müller'] },
+  { id: 'INV-2026-0244', vendor: 'CloudHost Pro GmbH',         amount: 3200,   currency: 'EUR', date: '2026-01-28', due: '2026-02-28', status: 'draft',            approvedBy: [] },
+  { id: 'INV-2026-0238', vendor: 'Vertex Manufacturing AG',    amount: 54300,  currency: 'EUR', date: '2026-01-20', due: '2026-02-20', status: 'overdue',          approvedBy: [] },
+  { id: 'INV-2026-0231', vendor: 'Global IT Services BV',      amount: 11200,  currency: 'EUR', date: '2026-01-15', due: '2026-02-15', status: 'paid',             approvedBy: ['T. Weber', 'M. Schmidt'] },
+]
+
+// ── AR invoices (customer outgoing) ───────────────────────────────────────
+export const arInvoices = [
+  { id: 'INV-OUT-2026-0088', customer: 'FinTech Alpha Ltd',     amount: 95000,  currency: 'EUR', date: '2026-03-01', due: '2026-03-31', status: 'sent',            paidAmount: 0 },
+  { id: 'INV-OUT-2026-0084', customer: 'Nordics Venture AB',    amount: 54000,  currency: 'EUR', date: '2026-02-28', due: '2026-03-28', status: 'partially_paid',  paidAmount: 27000 },
+  { id: 'INV-OUT-2026-0081', customer: 'Global Dynamics Corp',  amount: 120000, currency: 'EUR', date: '2026-02-25', due: '2026-03-25', status: 'matched',         paidAmount: 120000 },
+  { id: 'INV-OUT-2026-0077', customer: 'Solaris Payments SA',   amount: 75000,  currency: 'EUR', date: '2026-02-20', due: '2026-03-20', status: 'matched',         paidAmount: 75000 },
+  { id: 'INV-OUT-2026-0071', customer: 'MediaFlow GmbH',        amount: 32000,  currency: 'EUR', date: '2026-02-10', due: '2026-03-10', status: 'overdue',         paidAmount: 0 },
+  { id: 'INV-OUT-2026-0064', customer: 'Atlas Ventures BV',     amount: 18500,  currency: 'EUR', date: '2026-02-01', due: '2026-03-01', status: 'overdue',         paidAmount: 0 },
+  { id: 'INV-OUT-2026-0059', customer: 'Quantum Retail GmbH',   amount: 44000,  currency: 'EUR', date: '2026-01-25', due: '2026-02-25', status: 'paid',            paidAmount: 44000 },
+  { id: 'INV-OUT-2026-0051', customer: 'EuroTech Partners',     amount: 88000,  currency: 'EUR', date: '2026-01-15', due: '2026-02-15', status: 'paid',            paidAmount: 88000 },
+]
+
+// ── Bank payments (incoming) ───────────────────────────────────────────────
+export const bankPayments = [
+  { id: 'PAY-0041', date: '2026-03-03', counterparty: 'FinTech Alpha Ltd',    amount: 95000,  currency: 'EUR', reference: 'INV-OUT-2026-0088', status: 'matched',           matchedInvoice: 'INV-OUT-2026-0088' },
+  { id: 'PAY-0040', date: '2026-03-02', counterparty: 'Nordics Venture AB',   amount: 27000,  currency: 'EUR', reference: 'NV-PARTIAL-FEB',    status: 'partially_matched', matchedInvoice: 'INV-OUT-2026-0084' },
+  { id: 'PAY-0039', date: '2026-03-01', counterparty: 'Global Dynamics Corp', amount: 120000, currency: 'EUR', reference: 'GDC-ENT-2026-Q1',   status: 'matched',           matchedInvoice: 'INV-OUT-2026-0081' },
+  { id: 'PAY-0038', date: '2026-02-28', counterparty: 'Unknown Sender',       amount: 54000,  currency: 'EUR', reference: '—',                  status: 'unmatched',         matchedInvoice: null },
+  { id: 'PAY-0037', date: '2026-02-25', counterparty: 'Solaris Payments SA',  amount: 75000,  currency: 'EUR', reference: 'SOL-Q1-MILE2',       status: 'matched',           matchedInvoice: 'INV-OUT-2026-0077' },
+  { id: 'PAY-0036', date: '2026-02-10', counterparty: 'Anonymous Transfer',   amount: 12000,  currency: 'EUR', reference: 'AT-2026-02-10',      status: 'unmatched',         matchedInvoice: null },
+  { id: 'PAY-0035', date: '2026-02-05', counterparty: 'Quantum Retail GmbH',  amount: 44000,  currency: 'EUR', reference: 'QR-INV-0059',        status: 'matched',           matchedInvoice: 'INV-OUT-2026-0059' },
+  { id: 'PAY-0034', date: '2026-01-28', counterparty: 'EuroTech Partners',    amount: 88000,  currency: 'EUR', reference: 'ET-2026-0051',        status: 'matched',           matchedInvoice: 'INV-OUT-2026-0051' },
+]
+
+// ── Journal entries ────────────────────────────────────────────────────────
+export const journalEntries = [
+  { id: 'JE-2026-0128', date: '2026-03-02', type: 'FX',           description: 'FX revaluation USD/EUR — 2026-03-02',   debitAccount: 'USD Cash Account',        creditAccount: 'FX Gains',               amount: 1240,   currency: 'EUR', status: 'posted' },
+  { id: 'JE-2026-0124', date: '2026-02-28', type: 'Payroll',      description: 'Payroll accrual — February 2026',        debitAccount: 'Salary Expense',          creditAccount: 'Accrued Payroll',        amount: 128600, currency: 'EUR', status: 'posted' },
+  { id: 'JE-2026-0123', date: '2026-02-28', type: 'Depreciation', description: 'Fixed asset depreciation — Feb 2026',    debitAccount: 'Depreciation Expense',    creditAccount: 'Accum. Depreciation',    amount: 4800,   currency: 'EUR', status: 'posted' },
+  { id: 'JE-2026-0121', date: '2026-02-26', type: 'Accrual',      description: 'Q1 marketing accrual',                   debitAccount: 'Marketing Expense',       creditAccount: 'Accrued Liabilities',    amount: 22000,  currency: 'EUR', status: 'pending' },
+  { id: 'JE-2026-0118', date: '2026-02-24', type: 'Revaluation',  description: 'Investment revaluation — MSCI World ETF',debitAccount: 'Investments',             creditAccount: 'Unrealised Gains',       amount: 3120,   currency: 'EUR', status: 'posted' },
+  { id: 'JE-2026-0115', date: '2026-02-20', type: 'Accrual',      description: 'Software subscription accrual',          debitAccount: 'IT Expense',              creditAccount: 'Accrued Liabilities',    amount: 8400,   currency: 'EUR', status: 'pending' },
+  { id: 'JE-2026-0108', date: '2026-02-15', type: 'FX',           description: 'FX revaluation GBP/EUR — 2026-02-15',   debitAccount: 'GBP Cash Account',        creditAccount: 'FX Gains',               amount: 520,    currency: 'EUR', status: 'posted' },
+  { id: 'JE-2026-0101', date: '2026-02-01', type: 'Depreciation', description: 'Software amortisation — Jan 2026',       debitAccount: 'Amortisation Expense',    creditAccount: 'Accum. Amortisation',    amount: 2400,   currency: 'EUR', status: 'posted' },
+  { id: 'JE-2026-0095', date: '2026-01-31', type: 'Payroll',      description: 'Payroll accrual — January 2026',         debitAccount: 'Salary Expense',          creditAccount: 'Accrued Payroll',        amount: 126800, currency: 'EUR', status: 'posted' },
+  { id: 'JE-2026-0090', date: '2026-01-28', type: 'FX',           description: 'FX revaluation CHF/EUR — 2026-01-28',   debitAccount: 'CHF Cash Account',        creditAccount: 'FX Losses',              amount: 240,    currency: 'EUR', status: 'posted' },
+]
+
+// ── Monthly close checklist ────────────────────────────────────────────────
+export const monthlyCloseChecklist = [
+  { id: 1, task: 'All AP invoices processed & approved', done: true,  agent: 'AP Agent' },
+  { id: 2, task: 'Bank reconciliation completed',        done: true,  agent: 'AR Agent' },
+  { id: 3, task: 'Payroll accrual posted',               done: true,  agent: 'Accounting Agent' },
+  { id: 4, task: 'Fixed asset depreciation posted',      done: true,  agent: 'Accounting Agent' },
+  { id: 5, task: 'FX revaluation completed',             done: true,  agent: 'Accounting Agent' },
+  { id: 6, task: 'AR aging review',                      done: false, agent: 'AR Agent' },
+  { id: 7, task: 'Intercompany reconciliation',          done: false, agent: 'Accounting Agent' },
+  { id: 8, task: 'CFO report generated',                 done: false, agent: 'Reporting Agent' },
+  { id: 9, task: 'Management sign-off',                  done: false, agent: 'Manual' },
+]

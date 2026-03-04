@@ -15,7 +15,7 @@ from datetime import date
 from typing import Any, Optional
 
 from config import AppConfig
-from integrations import ERPClient, BankClient, CRMClient, EmailClient, FileStorageClient
+from integrations import BusinessCentralClient, BankClient, CRMClient, EmailClient, FileStorageClient
 from agents import APAgent, ARAgent, AccountingAgent, ReportingAgent
 from db import (
     get_supabase_client,
@@ -35,7 +35,7 @@ class Orchestrator:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
 
-        # ── Supabase client + repositories ──────────────────────────────
+        # ── Supabase client + repositories ──────────────────────────────────
         db = get_supabase_client()
         invoice_repo  = InvoiceRepository(db)
         approval_repo = ApprovalRepository(db)
@@ -43,68 +43,74 @@ class Orchestrator:
         journal_repo  = JournalEntryRepository(db)
         report_repo   = CFOReportRepository(db)
 
-        # ── Integration clients ──────────────────────────────────────────
-        self.erp = ERPClient(
-            base_url=config.erp.base_url,
-            api_key=config.erp.api_key,
-            company_id=config.erp.company_id,
+        # ── Integration clients ──────────────────────────────────────────────
+        self.bc = BusinessCentralClient(
+            tenant_id    = config.bc.tenant_id,
+            client_id    = config.bc.client_id,
+            client_secret= config.bc.client_secret,
+            company_id   = config.bc.company_id,
+            environment  = config.bc.environment,
         )
         self.bank = BankClient(
-            base_url=config.bank.base_url,
-            client_id=config.bank.client_id,
-            client_secret=config.bank.client_secret,
+            base_url     = config.bank.base_url,
+            client_id    = config.bank.client_id,
+            client_secret= config.bank.client_secret,
         )
         self.crm = CRMClient(
-            base_url=config.crm.base_url,
-            api_key=config.crm.api_key,
+            base_url= config.crm.base_url,
+            api_key = config.crm.api_key,
         )
         self.email = EmailClient(
-            host=config.email.host,
-            username=config.email.username,
-            password=config.email.password,
-            inbox_folder=config.email.invoice_inbox,
+            host         = config.email.host,
+            username     = config.email.username,
+            password     = config.email.password,
+            inbox_folder = config.email.invoice_inbox,
         )
         self.storage = FileStorageClient(base_path=config.storage.base_path)
 
-        # ── Agents (with injected repositories) ─────────────────────────
+        # ── Agents (BusinessCentralClient injected as the ERP client) ────────
         self.ap_agent = APAgent(
-            erp_client=self.erp,
-            email_client=self.email,
-            storage_client=self.storage,
-            approver_emails=config.agents.ap_approver_emails,
-            invoice_repo=invoice_repo,
-            approval_repo=approval_repo,
+            erp_client    = self.bc,
+            email_client  = self.email,
+            storage_client= self.storage,
+            approver_emails= config.agents.ap_approver_emails,
+            invoice_repo  = invoice_repo,
+            approval_repo = approval_repo,
         )
         self.ar_agent = ARAgent(
-            erp_client=self.erp,
-            bank_client=self.bank,
-            crm_client=self.crm,
-            bank_account_id=config.bank.account_id,
-            review_email=config.agents.ar_review_email,
-            invoice_repo=invoice_repo,
-            payment_repo=payment_repo,
+            erp_client    = self.bc,
+            bank_client   = self.bank,
+            crm_client    = self.crm,
+            bank_account_id= config.bank.account_id,
+            review_email  = config.agents.ar_review_email,
+            invoice_repo  = invoice_repo,
+            payment_repo  = payment_repo,
         )
         self.accounting_agent = AccountingAgent(
-            erp_client=self.erp,
-            storage_client=self.storage,
-            journal_repo=journal_repo,
-            base_currency=config.agents.base_currency,
+            erp_client    = self.bc,
+            storage_client= self.storage,
+            journal_repo  = journal_repo,
+            base_currency = config.agents.base_currency,
         )
         self.reporting_agent = ReportingAgent(
-            erp_client=self.erp,
-            email_client=self.email,
-            storage_client=self.storage,
-            report_repo=report_repo,
-            ap_agent=self.ap_agent,
-            ar_agent=self.ar_agent,
-            accounting_agent=self.accounting_agent,
+            erp_client      = self.bc,
+            email_client    = self.email,
+            storage_client  = self.storage,
+            report_repo     = report_repo,
+            ap_agent        = self.ap_agent,
+            ar_agent        = self.ar_agent,
+            accounting_agent= self.accounting_agent,
         )
 
-        logger.info("Orchestrator initialised — all agents ready")
+        logger.info("Orchestrator initialised — all agents ready (BC env=%s)", config.bc.environment)
 
-    # ------------------------------------------------------------------ #
-    # Composite run methods                                               #
-    # ------------------------------------------------------------------ #
+    # ── Connection health ────────────────────────────────────────────────────
+
+    def check_bc_connection(self) -> dict[str, Any]:
+        """Probe Business Central and return connection status."""
+        return self.bc.test_connection()
+
+    # ── Composite run methods ────────────────────────────────────────────────
 
     def run_daily(self, report_recipients: Optional[list[str]] = None) -> dict[str, Any]:
         """Daily automation cycle: AP → AR → FX entries → CFO report."""
@@ -133,8 +139,8 @@ class Orchestrator:
         today = date.today()
         if period is None:
             prev_month = today.month - 1 or 12
-            prev_year = today.year if today.month > 1 else today.year - 1
-            period = f"{prev_year}-{prev_month:02d}"
+            prev_year  = today.year if today.month > 1 else today.year - 1
+            period     = f"{prev_year}-{prev_month:02d}"
 
         logger.info("====== MONTHLY CLOSE CYCLE STARTED (period=%s) ======", period)
         results: dict[str, Any] = {}
@@ -166,11 +172,11 @@ class Orchestrator:
     ) -> None:
         """Proxy: record a human approver's decision. Call from webhook handler."""
         self.ap_agent.record_approval_decision(
-            approval_id=approval_id,
-            approver_id=approver_id,
-            approver_name=approver_name,
-            approved=approved,
-            comment=comment,
+            approval_id  = approval_id,
+            approver_id  = approver_id,
+            approver_name= approver_name,
+            approved     = approved,
+            comment      = comment,
         )
 
     @staticmethod

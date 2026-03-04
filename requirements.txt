@@ -1,40 +1,39 @@
-# ── Core ──────────────────────────────────────────────────────────────────
+# ── Core ──────────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0          # load .env into os.environ
 
-# ── Supabase ──────────────────────────────────────────────────────────────
+# ── Supabase ──────────────────────────────────────────────────────────────────
 supabase>=2.4.0               # Python Supabase client (server-side, uses service key)
 
-# ── PDF parsing (for investment statements and supplier invoices) ──────────
+# ── HTTP client (Business Central OData API, bank API, CRM) ──────────────────
+httpx>=0.27.0                 # async-capable HTTP client used by BusinessCentralClient
+
+# ── PDF parsing (for investment statements and supplier invoices) ─────────────
 pdfplumber>=0.10.0            # extract text and tables from PDFs
 # Alternative: camelot-py[cv] for table extraction from PDFs
 
-# ── OCR / document AI (for scanned supplier invoices) ────────────────────
+# ── OCR / document AI (for scanned supplier invoices) ────────────────────────
 # Uncomment the provider you use:
-# pytesseract>=0.3.10         # open-source OCR (requires Tesseract binary)
+# pytesseract>=0.3.10              # open-source OCR (requires Tesseract binary)
 # azure-ai-formrecognizer>=3.3.0   # Azure Form Recognizer / Document Intelligence
-# boto3>=1.34.0               # AWS Textract
+# boto3>=1.34.0                    # AWS Textract
 
-# ── Data processing ───────────────────────────────────────────────────────
+# ── Data processing ───────────────────────────────────────────────────────────
 pandas>=2.2.0                 # CSV/Excel parsing for payroll and investment files
 openpyxl>=3.1.0               # Excel (.xlsx) support for pandas
 
-# ── Fuzzy matching (AR reconciliation) ───────────────────────────────────
+# ── Fuzzy matching (AR reconciliation) ───────────────────────────────────────
 rapidfuzz>=3.6.0              # fast fuzzy string matching for counterparty names
 
-# ── HTTP client (for ERP, CRM, bank API calls) ───────────────────────────
-httpx>=0.27.0                 # async-capable HTTP client
-# Alternative: requests>=2.31.0
-
-# ── Scheduling (optional — if you prefer not to use a cron job) ──────────
+# ── Scheduling (optional — if you prefer not to use a cron job) ──────────────
 # apscheduler>=3.10.0         # in-process scheduler (APScheduler)
 # celery>=5.3.0               # distributed task queue
 
-# ── Email ─────────────────────────────────────────────────────────────────
+# ── Email ─────────────────────────────────────────────────────────────────────
 # The stdlib `smtplib` / `imaplib` are used by default.
 # Uncomment if using Microsoft Graph (Outlook) or Gmail API:
-# msgraph-sdk>=1.0.0          # Microsoft Graph SDK
-# google-api-python-client>=2.120.0  # Gmail API
+# msgraph-sdk>=1.0.0                        # Microsoft Graph SDK
+# google-api-python-client>=2.120.0         # Gmail API
 
-# ── Testing ───────────────────────────────────────────────────────────────
+# ── Testing ───────────────────────────────────────────────────────────────────
 pytest>=8.1.0
 pytest-mock>=3.12.0

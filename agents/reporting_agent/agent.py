@@ -16,7 +16,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, List, Optional
 
-from integrations.erp import ERPClient
+from integrations.business_central import BusinessCentralClient
 from integrations.email_client import EmailClient
 from integrations.file_storage import FileStorageClient
 from db.repositories import CFOReportRepository
@@ -112,7 +112,7 @@ class ReportingAgent:
 
     def __init__(
         self,
-        erp_client: ERPClient,
+        erp_client: BusinessCentralClient,
         email_client: EmailClient,
         storage_client: FileStorageClient,
         report_repo: CFOReportRepository,
