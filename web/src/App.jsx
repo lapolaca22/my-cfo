@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Overview from './pages/Overview'
+import Reports from './pages/Reports'
 import Placeholder from './pages/Placeholder'
 
 export default function App() {
@@ -37,15 +38,7 @@ export default function App() {
               />
             }
           />
-          <Route
-            path="/reports"
-            element={
-              <Placeholder
-                title="Reports"
-                subtitle="Reporting Agent · CFO summary, P&L, balance sheet"
-              />
-            }
-          />
+          <Route path="/reports" element={<Reports />} />
           <Route
             path="/settings"
             element={
