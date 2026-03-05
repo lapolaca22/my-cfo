@@ -61,24 +61,25 @@ export function AuthProvider({ children }) {
       return
     }
 
-    // Restore existing session (handles OAuth redirect back to app)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.email).finally(() => setLoading(false))
-      } else {
-        setLoading(false)
-      }
-    })
-
-    // Keep state in sync with auth changes (sign in, sign out, token refresh)
+    // Supabase v2 recommended pattern: use onAuthStateChange exclusively.
+    // INITIAL_SESSION is the first event fired (synchronously with restored/OAuth
+    // session from localStorage or URL hash). This avoids a race between
+    // getSession() and subsequent SIGNED_IN events after an OAuth redirect.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          await fetchProfile(session.user.email)
+        const u = session?.user ?? null
+        setUser(u)
+
+        if (u) {
+          // Read role from app_users by email; default to cfo if not found
+          await fetchProfile(u.email)
         } else {
           setProfile(null)
+        }
+
+        // Resolve the initial loading state after the first event
+        if (event === 'INITIAL_SESSION') {
+          setLoading(false)
         }
       }
     )

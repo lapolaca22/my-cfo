@@ -66,8 +66,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
         </Route>
 
-        {/* Auth temporarily disabled — remove <AppLayout> wrapper to re-enable RequireAuth */}
-        {/* <Route element={<RequireAuth />}> */}
+        {/* Protected routes — redirect to /login if not authenticated */}
+        <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>
             <Route path="/"          element={<Overview />} />
             <Route path="/ap"        element={<AccountsPayable />} />
@@ -78,7 +78,7 @@ export default function App() {
             {/* Catch-all inside app — redirect to dashboard */}
             <Route path="*"          element={<Navigate to="/" replace />} />
           </Route>
-        {/* </Route> */}
+        </Route>
       </Routes>
     </AuthProvider>
   )
