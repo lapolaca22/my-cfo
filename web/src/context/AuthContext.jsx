@@ -48,8 +48,8 @@ export function AuthProvider({ children }) {
       .eq('email', email)
       .maybeSingle()
 
-    // Fallback: unknown user → read_only until CFO grants a role
-    setProfile(data ?? { name: email, role: 'read_only', status: 'active' })
+    // Fallback: unknown user → cfo until roles are configured
+    setProfile(data ?? { name: email, role: 'cfo', status: 'active' })
   }
 
   useEffect(() => {
