@@ -6,7 +6,7 @@ import {
 import TopBar from '../components/TopBar'
 import { useInvoices } from '../hooks/useInvoices'
 import { apInvoices as mockApInvoices } from '../data/mockData'
-import { isConfigured } from '../lib/supabase'
+import { supabase, isConfigured } from '../lib/supabase'
 import clsx from 'clsx'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -31,16 +31,18 @@ function fmtAmt(amount, currency = 'EUR') {
 }
 
 function normaliseSupplierRow(row) {
-  // Supabase row → local shape
+  // Supabase row → local shape. rawId preserves UUID for approval_requests FK.
   return {
-    id:          row.invoice_number ?? row.id,
-    vendor:      row.vendor_or_customer ?? '—',
-    amount:      Number(row.amount ?? 0),
-    currency:    row.currency ?? 'EUR',
-    date:        row.invoice_date ?? row.date,
-    due:         row.due_date ?? row.due,
-    status:      row.status,
-    approvedBy:  [],
+    rawId:    row.id,
+    id:       row.invoice_number ?? row.id,
+    vendor:   row.vendor_or_customer ?? '—',
+    amount:   Number(row.amount ?? 0),
+    currency: row.currency ?? 'EUR',
+    date:     row.invoice_date ?? row.date,
+    due:      row.due_date ?? row.due,
+    status:   row.status,
+    approvedBy: [],
+    decisions:  [],
   }
 }
 
@@ -51,11 +53,60 @@ function SortIcon({ field, sortField, sortDir }) {
     : <ChevronDown className="w-3.5 h-3.5 text-brand-500" />
 }
 
+// ── Supabase: save approval request ──────────────────────────────────────────
+
+async function saveApprovalRequest({ invoiceRawId, decisions, status, amountHint }) {
+  if (!isConfigured || !invoiceRawId) return
+
+  // Check if a record already exists for this invoice
+  const { data: existing } = await supabase
+    .from('approval_requests')
+    .select('id')
+    .eq('invoice_id', invoiceRawId)
+    .maybeSingle()
+
+  const payload = {
+    invoice_id:   invoiceRawId,
+    subject_type: 'invoice',
+    decisions,
+    status,
+    amount_hint:  amountHint,
+    updated_at:   new Date().toISOString(),
+  }
+
+  if (existing) {
+    await supabase
+      .from('approval_requests')
+      .update(payload)
+      .eq('id', existing.id)
+  } else {
+    await supabase
+      .from('approval_requests')
+      .insert({ ...payload, created_at: new Date().toISOString() })
+  }
+}
+
 // ── Approval Modal ────────────────────────────────────────────────────────────
 
 function ApprovalModal({ invoice, type, onConfirm, onCancel }) {
   const [name, setName]     = useState('')
   const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error,  setError]  = useState(null)
+
+  const approvedBy = invoice.approvedBy ?? []
+
+  const handleConfirm = async () => {
+    if (!name.trim()) return
+    setError(null)
+    setSaving(true)
+    try {
+      await onConfirm(name.trim(), reason.trim())
+    } catch (err) {
+      setError(err.message ?? 'Failed to save. Please try again.')
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -81,6 +132,42 @@ function ApprovalModal({ invoice, type, onConfirm, onCancel }) {
         </div>
 
         <div className="space-y-3">
+          {/* 4-eyes progress — shown in approve modal */}
+          {type === 'approve' && (
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-slate-50 border border-slate-100">
+              <div className="flex items-center gap-1.5">
+                {Array.from({ length: REQUIRED_APPROVALS }, (_, i) => (
+                  <div
+                    key={i}
+                    className={clsx(
+                      'w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold border-2',
+                      i < approvedBy.length
+                        ? 'bg-emerald-100 border-emerald-400 text-emerald-700'
+                        : i === approvedBy.length
+                          ? 'bg-brand-50 border-brand-300 text-brand-600 ring-2 ring-brand-200'
+                          : 'bg-slate-100 border-slate-200 text-slate-400'
+                    )}
+                    title={approvedBy[i] ?? (i === approvedBy.length ? 'You' : 'Pending')}
+                  >
+                    {i < approvedBy.length ? '✓' : i === approvedBy.length ? '?' : '·'}
+                  </div>
+                ))}
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-slate-700">
+                  {approvedBy.length}/{REQUIRED_APPROVALS} approvals
+                  {approvedBy.length === 0 && ' — first approval'}
+                  {approvedBy.length === 1 && ' — final approval needed'}
+                </p>
+                {approvedBy.length > 0 && (
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Approved by: {approvedBy.join(', ')}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">
               Your name / approver ID <span className="text-red-500">*</span>
@@ -90,6 +177,7 @@ function ApprovalModal({ invoice, type, onConfirm, onCancel }) {
               placeholder="e.g. J. Müller"
               value={name}
               onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleConfirm()}
               autoFocus
               className="w-full px-3 py-2 rounded-2xl border border-slate-200 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-brand-200 focus:border-brand-400 transition-all"
             />
@@ -97,7 +185,9 @@ function ApprovalModal({ invoice, type, onConfirm, onCancel }) {
 
           {type === 'reject' && (
             <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">Reason for rejection</label>
+              <label className="text-xs font-semibold text-slate-600 block mb-1">
+                Reason for rejection <span className="text-red-500">*</span>
+              </label>
               <textarea
                 placeholder="Explain why this invoice is being rejected…"
                 value={reason}
@@ -108,34 +198,34 @@ function ApprovalModal({ invoice, type, onConfirm, onCancel }) {
             </div>
           )}
 
-          {type === 'approve' && invoice.approvedBy?.length > 0 && (
-            <div className="bg-brand-50 border border-brand-100 rounded-2xl px-3 py-2">
-              <p className="text-[11px] text-brand-700 font-medium">
-                Already approved by: {invoice.approvedBy.join(', ')}
-              </p>
-              <p className="text-[10px] text-brand-500 mt-0.5">
-                4-eyes: one more approval needed to fully authorise this invoice.
-              </p>
-            </div>
+          {error && (
+            <p className="text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+              {error}
+            </p>
           )}
         </div>
 
         <div className="flex gap-2 mt-5">
           <button
-            onClick={() => onConfirm(name.trim(), reason)}
-            disabled={!name.trim()}
+            onClick={handleConfirm}
+            disabled={!name.trim() || (type === 'reject' && !reason.trim()) || saving}
             className={clsx(
-              'flex-1 py-2 rounded-2xl text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
+              'flex-1 py-2 rounded-2xl text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5',
               type === 'approve'
                 ? 'bg-emerald-600 text-white hover:bg-emerald-700'
                 : 'bg-red-500 text-white hover:bg-red-600'
             )}
           >
-            {type === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
+            {saving && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+            {type === 'approve'
+              ? approvedBy.length + 1 >= REQUIRED_APPROVALS ? 'Approve & Finalise' : 'Approve (1st of 2)'
+              : 'Confirm Rejection'
+            }
           </button>
           <button
             onClick={onCancel}
-            className="px-4 py-2 rounded-2xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors"
+            disabled={saving}
+            className="px-4 py-2 rounded-2xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors disabled:opacity-40"
           >
             Cancel
           </button>
@@ -155,21 +245,49 @@ export default function AccountsPayable() {
     ? liveData.map(normaliseSupplierRow)
     : mockApInvoices
 
-  // Local approval overrides (optimistic UI)
-  const [overrides, setOverrides]   = useState({})
-  const [modal, setModal]           = useState(null)   // { type, invoice }
-  const [search, setSearch]         = useState('')
+  // Local approval overrides — keyed by invoice id (invoice number string)
+  // Each entry: { approvedBy: string[], decisions: object[], status: string }
+  const [overrides, setOverrides]       = useState({})
+  const [modal, setModal]               = useState(null)   // { type, invoice }
+  const [search, setSearch]             = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
-  const [sortField, setSortField]   = useState('due')
-  const [sortDir, setSortDir]       = useState('asc')
-  const [page, setPage]             = useState(0)
+  const [sortField, setSortField]       = useState('due')
+  const [sortDir, setSortDir]           = useState('asc')
+  const [page, setPage]                 = useState(0)
   const PAGE_SIZE = 8
 
-  // Reset overrides when live data changes
-  useEffect(() => { setOverrides({}) }, [liveData])
+  // Load existing approval decisions from Supabase when live data changes
+  useEffect(() => {
+    if (!isConfigured || !liveData.length) return
+    const rawIds = liveData.map(r => r.id).filter(Boolean)
+    if (!rawIds.length) return
+
+    supabase
+      .from('approval_requests')
+      .select('invoice_id, status, decisions')
+      .in('invoice_id', rawIds)
+      .then(({ data }) => {
+        if (!data?.length) return
+        const newOverrides = {}
+        data.forEach(req => {
+          const inv = liveData.find(r => r.id === req.invoice_id)
+          if (!inv) return
+          const localKey = inv.invoice_number ?? inv.id
+          const approvedDecisions = (req.decisions ?? []).filter(d => d.decision === 'approved')
+          newOverrides[localKey] = {
+            approvedBy: approvedDecisions.map(d => d.approver_name),
+            decisions:  req.decisions ?? [],
+            status:     req.status ?? inv.status,
+          }
+        })
+        setOverrides(newOverrides)
+      })
+  }, [liveData])
+
+  // Reset overrides when switching between mock and live
+  useEffect(() => { setOverrides({}) }, [isConfigured])
 
   const getInvoice = (inv) => ({ ...inv, ...(overrides[inv.id] ?? {}) })
-
   const invoices = baseInvoices.map(getInvoice)
 
   // ── Derived KPIs ──────────────────────────────────────────────────────────
@@ -221,31 +339,57 @@ export default function AccountsPayable() {
   const handleApprove = (inv) => setModal({ type: 'approve', invoice: inv })
   const handleReject  = (inv) => setModal({ type: 'reject',  invoice: inv })
 
-  const confirmAction = (approverName, reason) => {
+  const confirmAction = async (approverName, reason) => {
     const inv = modal.invoice
     const existing = overrides[inv.id] ?? {}
     const currentApprovedBy = existing.approvedBy ?? inv.approvedBy ?? []
+    const currentDecisions  = existing.decisions  ?? inv.decisions  ?? []
+    const now = new Date().toISOString()
 
     if (modal.type === 'approve') {
       if (currentApprovedBy.includes(approverName)) {
-        alert('This approver has already approved this invoice.')
-        return
+        throw new Error('This approver has already approved this invoice.')
       }
       const newApprovedBy = [...currentApprovedBy, approverName]
       const fullyApproved = newApprovedBy.length >= REQUIRED_APPROVALS
+      const newStatus     = fullyApproved ? 'approved' : 'pending_approval'
+      const newDecisions  = [
+        ...currentDecisions.filter(d => d.decision === 'approved'),
+        { approver_name: approverName, decision: 'approved', timestamp: now },
+      ]
+
       setOverrides(prev => ({
         ...prev,
-        [inv.id]: {
-          approvedBy: newApprovedBy,
-          status: fullyApproved ? 'approved' : 'pending_approval',
-        },
+        [inv.id]: { approvedBy: newApprovedBy, decisions: newDecisions, status: newStatus },
       }))
+
+      await saveApprovalRequest({
+        invoiceRawId: inv.rawId ?? inv.id,
+        decisions:    newDecisions,
+        status:       newStatus,
+        amountHint:   fmtAmt(inv.amount, inv.currency),
+      })
+
     } else {
+      // Reject
+      const newDecisions = [
+        ...currentDecisions.filter(d => d.decision === 'approved'),
+        { approver_name: approverName, decision: 'rejected', timestamp: now, comment: reason },
+      ]
+
       setOverrides(prev => ({
         ...prev,
-        [inv.id]: { status: 'rejected', approvedBy: currentApprovedBy },
+        [inv.id]: { approvedBy: currentApprovedBy, decisions: newDecisions, status: 'rejected' },
       }))
+
+      await saveApprovalRequest({
+        invoiceRawId: inv.rawId ?? inv.id,
+        decisions:    newDecisions,
+        status:       'rejected',
+        amountHint:   fmtAmt(inv.amount, inv.currency),
+      })
     }
+
     setModal(null)
   }
 
@@ -357,11 +501,16 @@ export default function AccountsPayable() {
                 )}
                 {!loading && pageData.map(inv => {
                   const cfg = STATUS_CFG[inv.status] ?? STATUS_CFG.draft
-                  const approvedCount = (inv.approvedBy ?? []).length
-                  const isPending = inv.status === 'pending_approval'
-                  const daysUntilDue = inv.due
+                  const approvedBy    = inv.approvedBy ?? []
+                  const approvedCount = approvedBy.length
+                  const decisions     = inv.decisions ?? []
+                  const isPending     = inv.status === 'pending_approval'
+                  const daysUntilDue  = inv.due
                     ? Math.ceil((new Date(inv.due) - new Date()) / 86_400_000)
                     : null
+
+                  // Find the rejector (if any)
+                  const rejectorDecision = decisions.find(d => d.decision === 'rejected')
 
                   return (
                     <tr key={inv.id} className="group border-b border-slate-50 hover:bg-slate-50/70 transition-colors">
@@ -410,7 +559,7 @@ export default function AccountsPayable() {
                       {/* 4-eyes indicator */}
                       <td className="px-5 py-3.5">
                         {['pending_approval', 'approved', 'queued', 'paid'].includes(inv.status) ? (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1.5">
                             {Array.from({ length: REQUIRED_APPROVALS }, (_, i) => (
                               <div
                                 key={i}
@@ -420,17 +569,24 @@ export default function AccountsPayable() {
                                     ? 'bg-emerald-100 border-emerald-300 text-emerald-700'
                                     : 'bg-slate-100 border-slate-200 text-slate-400'
                                 )}
-                                title={(inv.approvedBy ?? [])[i] ?? 'Pending'}
+                                title={approvedBy[i] ?? 'Pending'}
                               >
                                 {i < approvedCount ? '✓' : '·'}
                               </div>
                             ))}
-                            {(inv.approvedBy ?? []).length > 0 && (
-                              <span className="text-[10px] text-slate-400 ml-1">
-                                {(inv.approvedBy ?? []).join(', ')}
+                            <span className="text-[10px] text-slate-500 font-semibold ml-0.5">
+                              {approvedCount}/{REQUIRED_APPROVALS}
+                            </span>
+                            {approvedBy.length > 0 && (
+                              <span className="text-[10px] text-slate-400 ml-0.5 hidden xl:inline">
+                                {approvedBy.join(', ')}
                               </span>
                             )}
                           </div>
+                        ) : inv.status === 'rejected' && rejectorDecision ? (
+                          <span className="text-[10px] text-red-500 font-medium" title={rejectorDecision.comment}>
+                            Rejected by {rejectorDecision.approver_name}
+                          </span>
                         ) : (
                           <span className="text-xs text-slate-300">—</span>
                         )}
@@ -444,7 +600,8 @@ export default function AccountsPayable() {
                               onClick={() => handleApprove(inv)}
                               className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-700 text-[10px] font-bold hover:bg-emerald-200 transition-colors"
                             >
-                              <CheckCircle2 className="w-3 h-3" /> Approve
+                              <CheckCircle2 className="w-3 h-3" />
+                              {approvedCount > 0 ? 'Approve (2nd)' : 'Approve'}
                             </button>
                             <button
                               onClick={() => handleReject(inv)}
