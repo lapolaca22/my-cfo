@@ -17,7 +17,10 @@ if (!url || !key) {
  */
 export const supabase = (url && key)
   ? createClient(url, key, {
-      auth: { persistSession: false },
+      auth: {
+        persistSession: true,       // required: keeps session alive across OAuth redirect
+        storageKey:     'my-cfo',
+      },
     })
   : null
 

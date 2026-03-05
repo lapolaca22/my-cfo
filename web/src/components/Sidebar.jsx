@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   FileText,
@@ -6,11 +6,12 @@ import {
   BookOpen,
   BarChart3,
   Settings,
-  ChevronRight,
   Zap,
   Bell,
+  LogOut,
 } from 'lucide-react'
 import { pendingApprovals, alerts } from '../data/mockData'
+import { useAuth } from '../context/AuthContext'
 import clsx from 'clsx'
 
 const navItems = [
@@ -38,8 +39,22 @@ const navItems = [
 ]
 
 export default function Sidebar() {
-  const location = useLocation()
+  const location   = useLocation()
+  const navigate   = useNavigate()
+  const { displayName, avatarInitials, role, signOut, isDemo } = useAuth()
   const alertCount = alerts.filter(a => a.level === 'error' || a.level === 'warning').length
+
+  const handleSignOut = async () => {
+    await signOut()
+    navigate('/login')
+  }
+
+  const ROLE_LABELS = {
+    cfo:        'CFO',
+    ap_manager: 'AP Manager',
+    ar_manager: 'AR Manager',
+    read_only:  'Read Only',
+  }
 
   return (
     <aside className="flex flex-col w-64 min-h-screen bg-brand-950 text-white shrink-0">
@@ -119,15 +134,30 @@ export default function Sidebar() {
       )}
 
       {/* User footer */}
-      <div className="flex items-center gap-3 px-4 py-4 border-t border-brand-900">
-        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-600 text-xs font-bold text-white shrink-0">
-          CF
+      <div className="border-t border-brand-900 px-3 py-3 space-y-1">
+        <div className="flex items-center gap-3 px-2 py-2">
+          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-600 text-xs font-bold text-white shrink-0">
+            {avatarInitials}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold leading-tight truncate">{displayName}</p>
+            <p className="text-[11px] text-brand-400 truncate">{ROLE_LABELS[role] ?? role}</p>
+          </div>
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-tight truncate">CFO User</p>
-          <p className="text-[11px] text-brand-400 truncate">cfo@startup.com</p>
-        </div>
-        <ChevronRight className="w-3.5 h-3.5 text-brand-500 shrink-0" />
+        <button
+          onClick={handleSignOut}
+          disabled={isDemo}
+          title={isDemo ? 'Auth disabled in demo mode' : 'Sign out'}
+          className={clsx(
+            'w-full flex items-center gap-2.5 px-3 py-2 rounded-2xl text-xs font-medium transition-all',
+            isDemo
+              ? 'text-brand-600 cursor-not-allowed opacity-50'
+              : 'text-brand-400 hover:bg-brand-900 hover:text-white',
+          )}
+        >
+          <LogOut className="w-3.5 h-3.5 shrink-0" />
+          Sign out
+        </button>
       </div>
     </aside>
   )

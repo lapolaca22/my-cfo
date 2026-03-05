@@ -353,3 +353,85 @@ VALUES
    '[{"account_code":"1500","account_name":"Financial Investments","debit":3120,"credit":0},
      {"account_code":"6200","account_name":"Investment Revaluation P&L","debit":0,"credit":3120}]')
 ON CONFLICT DO NOTHING;
+
+
+-- =============================================================================
+-- TABLE: app_settings
+-- Key-value store for dashboard and agent configuration (set via Settings page).
+-- All values are stored as JSONB to support strings, numbers, and booleans.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        TEXT        PRIMARY KEY,
+  value      JSONB       NOT NULL DEFAULT 'null',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION set_app_settings_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_app_settings_updated_at
+  BEFORE UPDATE ON app_settings
+  FOR EACH ROW EXECUTE FUNCTION set_app_settings_updated_at();
+
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "dev_allow_all" ON app_settings FOR ALL USING (true) WITH CHECK (true);
+
+-- Seed default settings
+INSERT INTO app_settings (key, value) VALUES
+  ('company_name',             '"Acme Corp GmbH"'),
+  ('base_currency',            '"EUR"'),
+  ('fiscal_year_start',        '"1"'),
+  ('approval_threshold',       '"10000"'),
+  ('ap_approvers',             '"J. Müller, S. Weber"'),
+  ('ar_approvers',             '"S. Weber"'),
+  ('accounting_approvers',     '"M. Brandt, J. Müller"'),
+  ('escalation_email',         '"cfo@acmecorp.com"'),
+  ('notif_overdue',            'true'),
+  ('notif_unmatched',          'true'),
+  ('notif_approval_needed',    'true'),
+  ('notif_close_ready',        'false'),
+  ('bc_environment',           '"sandbox"'),
+  ('email_imap_port',          '"993"')
+ON CONFLICT (key) DO NOTHING;
+
+
+-- =============================================================================
+-- TABLE: app_users
+-- Team members with roles for the CFO dashboard.
+-- In production, link to auth.users via auth.uid().
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS app_users (
+  id         UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name       TEXT        NOT NULL,
+  email      TEXT        NOT NULL UNIQUE,
+  role       TEXT        NOT NULL DEFAULT 'read_only'
+               CHECK (role IN ('cfo', 'ap_manager', 'ar_manager', 'read_only')),
+  status     TEXT        NOT NULL DEFAULT 'invited'
+               CHECK (status IN ('active', 'invited', 'disabled')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_users_email ON app_users (email);
+CREATE INDEX IF NOT EXISTS idx_app_users_role  ON app_users (role);
+
+CREATE TRIGGER trg_app_users_updated_at
+  BEFORE UPDATE ON app_users
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "dev_allow_all" ON app_users FOR ALL USING (true) WITH CHECK (true);
+
+-- Seed demo users
+INSERT INTO app_users (name, email, role, status) VALUES
+  ('Anna Fischer', 'anna@acmecorp.com',   'cfo',        'active'),
+  ('Jonas Müller', 'jonas@acmecorp.com',  'ap_manager', 'active'),
+  ('Sophie Weber', 'sophie@acmecorp.com', 'ar_manager', 'active'),
+  ('Max Brandt',   'max@acmecorp.com',    'ap_manager', 'active'),
+  ('Lena Koch',    'lena@acmecorp.com',   'read_only',  'invited')
+ON CONFLICT (email) DO NOTHING;
