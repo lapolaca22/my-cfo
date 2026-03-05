@@ -61,6 +61,16 @@ export function AuthProvider({ children }) {
       return
     }
 
+    // Safety timeout: if INITIAL_SESSION never fires (stale session lock,
+    // network error, etc.) force loading=false after 3 s so the app doesn't
+    // hang — RequireAuth will then redirect to /login.
+    let initialSessionReceived = false
+    const timeoutId = setTimeout(() => {
+      if (!initialSessionReceived) {
+        setLoading(false)
+      }
+    }, 3000)
+
     // Supabase v2 recommended pattern: use onAuthStateChange exclusively.
     // INITIAL_SESSION is the first event fired (synchronously with restored/OAuth
     // session from localStorage or URL hash). This avoids a race between
@@ -79,12 +89,17 @@ export function AuthProvider({ children }) {
 
         // Resolve the initial loading state after the first event
         if (event === 'INITIAL_SESSION') {
+          initialSessionReceived = true
+          clearTimeout(timeoutId)
           setLoading(false)
         }
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      clearTimeout(timeoutId)
+      subscription.unsubscribe()
+    }
   }, [])
 
   const signInWithMicrosoft = () =>
